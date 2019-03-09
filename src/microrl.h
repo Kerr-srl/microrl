@@ -17,14 +17,29 @@ typedef struct {
 } ring_history_t;
 #endif
 
+typedef struct microrl_t microrl_t;
+
 struct microrl_config {
 	char *prompt_str; // pointer to prompt string
 	uint8_t prompt_length;
 	int (*execute)(int argc,
 				   const char *const *argv); // ptr to 'execute' callback
-	char **(*get_completion)(
-		int argc, const char *const *argv); // ptr to 'completion' callback
-	void (*print)(const char *);			// ptr to 'print' callback
+	/**
+	 * \brief Userspace completion retrieval function.
+	 *
+	 * \param [in] argc
+	 * \param [in] argv
+	 * \param [in] microrl_handle_complete
+	 *
+	 * In order to make microrl handle the retrieved functions,
+	 * call \p microrl_handle_complete.
+	 */
+	void (*get_completion)(
+		int argc, const char *const *argv,
+		void microrl_handle_complete(microrl_t *pThis, int argc,
+									 const char *const *argv,
+									 const char *completions[]));
+	void (*print)(const char *); // ptr to 'print' callback
 #ifdef MICRORL_USE_CTRL_C
 	void (*sigint)(void);
 #endif
@@ -35,7 +50,7 @@ struct microrl_config {
 };
 
 // microrl struct, contain internal library data
-typedef struct {
+typedef struct microrl_t {
 #ifdef MICRORL_USE_ESC_SEQ
 	char escape_seq;
 	char escape;
@@ -71,8 +86,7 @@ void microrl_set_prompt(microrl_t *pThis, char *prompt_str,
 //   'Whitespace' If complite token found, it's must contain only one token to
 //   be complitted Empty string if complite not found, and multiple string if
 //   there are some token
-void microrl_set_complete_callback(
-	microrl_t *pThis, char **(*get_completion)(int, const char *const *));
+void microrl_set_complete_callback(microrl_t *pThis, void (*get_completion)(int argc, const char *const *argv, void microrl_handle_complete( microrl_t *pThis, int argc, const char *const *argv, const char *completions[])));
 
 // pointer to callback func, that called when user press 'Enter'
 // execute func param: argc - argument count, argv - pointer array to token

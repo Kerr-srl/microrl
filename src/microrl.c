@@ -386,8 +386,13 @@ void microrl_set_prompt(microrl_t *pThis, char *prompt_str,
 	pThis->config.prompt_length = prompt_length;
 }
 //*****************************************************************************
+//
 void microrl_set_complete_callback(
-	microrl_t *pThis, char **(*get_completion)(int, const char *const *)) {
+	microrl_t *pThis, void (*get_completion)(int argc, const char *const *argv,
+											 void microrl_handle_complete(
+												 microrl_t *pThis, int argc,
+												 const char *const *argv,
+												 const char *completions[]))) {
 	pThis->config.get_completion = get_completion;
 }
 
@@ -471,7 +476,7 @@ static int escape_process(microrl_t *pThis, char ch) {
 
 //*****************************************************************************
 // insert len char of text at cursor position
-static int microrl_insert_text(microrl_t *pThis, char *text, int len) {
+static int microrl_insert_text(microrl_t *pThis, const char *text, int len) {
 	int i;
 	if (pThis->cmdlen + len < MICRORL_COMMAND_LINE_LEN) {
 		memmove(pThis->cmdline + pThis->cursor + len,
@@ -507,10 +512,10 @@ static void microrl_backspace(microrl_t *pThis) {
 #ifdef MICRORL_USE_COMPLETE
 
 //*****************************************************************************
-static int common_len(char **arr) {
+static int common_len(const char **arr) {
 	int i;
 	int j;
-	char *shortest = arr[0];
+	const char *shortest = arr[0];
 	int shortlen = strlen(shortest);
 
 	for (i = 0; arr[i] != NULL; ++i)
@@ -527,30 +532,24 @@ static int common_len(char **arr) {
 	return i;
 }
 
-//*****************************************************************************
-static void microrl_get_complete(microrl_t *pThis) {
-	char const *tkn_arr[MICRORL_COMMAND_TOKEN_NMB];
-	char **compl_token;
-
-	if (pThis->config.get_completion == NULL) // callback was not set
-		return;
-
-	int status = split(pThis, pThis->cursor, tkn_arr);
-	if (pThis->cmdline[pThis->cursor > 0 ? pThis->cursor - 1 : 0] == '\0')
-		tkn_arr[status++] = "";
-	compl_token = pThis->config.get_completion(status, tkn_arr);
-	if (compl_token[0] != NULL) {
+/**
+ * \brief Callback passed to userspace to handle retrieved completion
+ */
+static void microrl_handle_complete(microrl_t *pThis, int argc,
+									const char *const *argv,
+									const char *completions[]) {
+	if (completions[0] != NULL) {
 		int i = 0;
 		int len;
 
-		if (compl_token[1] == NULL) {
-			len = strlen(compl_token[0]);
+		if (completions[1] == NULL) {
+			len = strlen(completions[0]);
 		} else {
-			len = common_len(compl_token);
+			len = common_len(completions);
 			terminal_newline(pThis);
-			while (compl_token[i] != NULL) {
-				pThis->config.print(compl_token[i]);
-				if (compl_token[i + 1] != NULL) {
+			while (completions[i] != NULL) {
+				pThis->config.print(completions[i]);
+				if (completions[i + 1] != NULL) {
 					pThis->config.print(" ");
 				}
 				i++;
@@ -560,16 +559,32 @@ static void microrl_get_complete(microrl_t *pThis) {
 		}
 
 		if (len) {
-			microrl_insert_text(pThis,
-								compl_token[0] + strlen(tkn_arr[status - 1]),
-								len - strlen(tkn_arr[status - 1]));
-			if (compl_token[1] == NULL)
+			microrl_insert_text(pThis, completions[0] + strlen(argv[argc - 1]),
+								len - strlen(argv[argc - 1]));
+			if (completions[1] == NULL)
 				microrl_insert_text(pThis, " ", 1);
 		}
 		terminal_reset_cursor(pThis);
 		terminal_print_line(pThis, 0, pThis->cursor);
 	}
 }
+
+//*****************************************************************************
+/**
+ * \brief Trigger userspace completion retrieval.
+ */
+static void microrl_get_complete(microrl_t *pThis) {
+	char const *tkn_arr[MICRORL_COMMAND_TOKEN_NMB];
+
+	if (pThis->config.get_completion == NULL) // callback was not set
+		return;
+
+	int status = split(pThis, pThis->cursor, tkn_arr);
+	if (pThis->cmdline[pThis->cursor > 0 ? pThis->cursor - 1 : 0] == '\0')
+		tkn_arr[status++] = "";
+	pThis->config.get_completion(status, tkn_arr, microrl_handle_complete);
+}
+
 #endif
 
 /**
